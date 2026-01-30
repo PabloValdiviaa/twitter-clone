@@ -5,7 +5,7 @@ import { TimelineTabs } from "@/components/feed/timeline-tabs";
 export default function HomePage() {
   return (
     <div>
-      <Header title="Home" />
+      <Header title="Inicio" />
       <ComposePost />
       <TimelineTabs />
     </div>

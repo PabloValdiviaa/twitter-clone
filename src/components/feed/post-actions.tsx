@@ -19,9 +19,17 @@ interface PostActionsProps {
 
 export function PostActions({ post }: PostActionsProps) {
   const router = useRouter();
-  const { user } = useCurrentUser();
+  const { user, isAuthenticated } = useCurrentUser();
   const queryClient = useQueryClient();
   const isOwnPost = user?.id === post.authorId;
+
+  function requireAuth(): boolean {
+    if (!isAuthenticated) {
+      router.push("/login");
+      return false;
+    }
+    return true;
+  }
 
   const likeMutation = useOptimisticAction({
     mutationFn: () => toggleLike(post.id),
@@ -75,6 +83,7 @@ export function PostActions({ post }: PostActionsProps) {
       <button
         onClick={(e) => {
           e.stopPropagation();
+          if (!requireAuth()) return;
           router.push(`/post/${post.id}`);
         }}
         className="group flex items-center gap-1 text-muted-foreground transition-colors hover:text-blue-500"
@@ -92,6 +101,7 @@ export function PostActions({ post }: PostActionsProps) {
       <button
         onClick={(e) => {
           e.stopPropagation();
+          if (!requireAuth()) return;
           repostMutation.mutate();
         }}
         className={cn(
@@ -112,6 +122,7 @@ export function PostActions({ post }: PostActionsProps) {
       <button
         onClick={(e) => {
           e.stopPropagation();
+          if (!requireAuth()) return;
           likeMutation.mutate();
         }}
         className={cn(
@@ -135,6 +146,7 @@ export function PostActions({ post }: PostActionsProps) {
       <button
         onClick={(e) => {
           e.stopPropagation();
+          if (!requireAuth()) return;
           bookmarkMutation.mutate();
         }}
         className={cn(

@@ -5,15 +5,21 @@ import { usePathname } from "next/navigation";
 import { Home, Search, Bell, Bookmark } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const mobileLinks = [
+const allLinks = [
   { href: "/home", icon: Home },
   { href: "/explore", icon: Search },
   { href: "/notifications", icon: Bell },
   { href: "/bookmarks", icon: Bookmark },
 ];
 
-export function MobileNav() {
+const publicLinks = [
+  { href: "/home", icon: Home },
+  { href: "/explore", icon: Search },
+];
+
+export function MobileNav({ isAuthenticated }: { isAuthenticated: boolean }) {
   const pathname = usePathname();
+  const mobileLinks = isAuthenticated ? allLinks : publicLinks;
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background lg:hidden">

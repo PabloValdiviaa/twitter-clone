@@ -2,7 +2,7 @@
 
 import { db } from "@/lib/db";
 import { posts, likes, reposts, bookmarks, user, notifications } from "@/lib/db/schema";
-import { requireSession } from "@/lib/auth-session";
+import { getSession, requireSession } from "@/lib/auth-session";
 import { createPostSchema } from "@/lib/validators";
 import { eq, desc, and, isNull, sql, lt, inArray } from "drizzle-orm";
 import type { PostWithAuthor, CursorPaginationResult, ActionResult } from "@/types";
@@ -86,8 +86,8 @@ export async function getTimeline({
   cursor?: string;
   tab?: "for-you" | "following";
 }): Promise<CursorPaginationResult<PostWithAuthor>> {
-  const session = await requireSession();
-  const currentUserId = session.user.id;
+  const session = await getSession();
+  const currentUserId = session?.user?.id ?? null;
 
   // Build conditions
   const conditions = [isNull(posts.parentId)];
@@ -96,7 +96,7 @@ export async function getTimeline({
     conditions.push(lt(posts.createdAt, new Date(cursor)));
   }
 
-  if (tab === "following") {
+  if (tab === "following" && currentUserId) {
     const userFollowing = await db
       .select({ followingId: follows.followingId })
       .from(follows)
@@ -124,9 +124,15 @@ export async function getTimeline({
       likesCount: sql<number>`(SELECT COUNT(*) FROM likes WHERE likes.post_id = ${posts.id})`.as("likes_count"),
       repostsCount: sql<number>`(SELECT COUNT(*) FROM reposts WHERE reposts.post_id = ${posts.id})`.as("reposts_count"),
       repliesCount: sql<number>`(SELECT COUNT(*) FROM posts AS r WHERE r.parent_id = ${posts.id})`.as("replies_count"),
-      isLiked: sql<boolean>`EXISTS(SELECT 1 FROM likes WHERE likes.post_id = ${posts.id} AND likes.user_id = ${currentUserId})`.as("is_liked"),
-      isReposted: sql<boolean>`EXISTS(SELECT 1 FROM reposts WHERE reposts.post_id = ${posts.id} AND reposts.user_id = ${currentUserId})`.as("is_reposted"),
-      isBookmarked: sql<boolean>`EXISTS(SELECT 1 FROM bookmarks WHERE bookmarks.post_id = ${posts.id} AND bookmarks.user_id = ${currentUserId})`.as("is_bookmarked"),
+      isLiked: currentUserId
+        ? sql<boolean>`EXISTS(SELECT 1 FROM likes WHERE likes.post_id = ${posts.id} AND likes.user_id = ${currentUserId})`.as("is_liked")
+        : sql<boolean>`false`.as("is_liked"),
+      isReposted: currentUserId
+        ? sql<boolean>`EXISTS(SELECT 1 FROM reposts WHERE reposts.post_id = ${posts.id} AND reposts.user_id = ${currentUserId})`.as("is_reposted")
+        : sql<boolean>`false`.as("is_reposted"),
+      isBookmarked: currentUserId
+        ? sql<boolean>`EXISTS(SELECT 1 FROM bookmarks WHERE bookmarks.post_id = ${posts.id} AND bookmarks.user_id = ${currentUserId})`.as("is_bookmarked")
+        : sql<boolean>`false`.as("is_bookmarked"),
     })
     .from(posts)
     .innerJoin(user, eq(posts.authorId, user.id))
@@ -166,10 +172,10 @@ export async function getTimeline({
   };
 }
 
-// Internal version that accepts userId directly to avoid repeated requireSession calls
+// Internal version that accepts userId directly to avoid repeated session calls
 async function getPostByIdInternal(
   postId: string,
-  currentUserId: string,
+  currentUserId: string | null,
 ): Promise<PostWithAuthor | null> {
   const results = await db
     .select({
@@ -185,9 +191,15 @@ async function getPostByIdInternal(
       likesCount: sql<number>`(SELECT COUNT(*) FROM likes WHERE likes.post_id = ${posts.id})`,
       repostsCount: sql<number>`(SELECT COUNT(*) FROM reposts WHERE reposts.post_id = ${posts.id})`,
       repliesCount: sql<number>`(SELECT COUNT(*) FROM posts AS r WHERE r.parent_id = ${posts.id})`,
-      isLiked: sql<boolean>`EXISTS(SELECT 1 FROM likes WHERE likes.post_id = ${posts.id} AND likes.user_id = ${currentUserId})`,
-      isReposted: sql<boolean>`EXISTS(SELECT 1 FROM reposts WHERE reposts.post_id = ${posts.id} AND reposts.user_id = ${currentUserId})`,
-      isBookmarked: sql<boolean>`EXISTS(SELECT 1 FROM bookmarks WHERE bookmarks.post_id = ${posts.id} AND bookmarks.user_id = ${currentUserId})`,
+      isLiked: currentUserId
+        ? sql<boolean>`EXISTS(SELECT 1 FROM likes WHERE likes.post_id = ${posts.id} AND likes.user_id = ${currentUserId})`
+        : sql<boolean>`false`,
+      isReposted: currentUserId
+        ? sql<boolean>`EXISTS(SELECT 1 FROM reposts WHERE reposts.post_id = ${posts.id} AND reposts.user_id = ${currentUserId})`
+        : sql<boolean>`false`,
+      isBookmarked: currentUserId
+        ? sql<boolean>`EXISTS(SELECT 1 FROM bookmarks WHERE bookmarks.post_id = ${posts.id} AND bookmarks.user_id = ${currentUserId})`
+        : sql<boolean>`false`,
     })
     .from(posts)
     .innerJoin(user, eq(posts.authorId, user.id))
@@ -224,8 +236,8 @@ async function getPostByIdInternal(
 export async function getPostById(
   postId: string,
 ): Promise<PostWithAuthor | null> {
-  const session = await requireSession();
-  return getPostByIdInternal(postId, session.user.id);
+  const session = await getSession();
+  return getPostByIdInternal(postId, session?.user?.id ?? null);
 }
 
 export async function getPostReplies({
@@ -235,8 +247,8 @@ export async function getPostReplies({
   postId: string;
   cursor?: string;
 }): Promise<CursorPaginationResult<PostWithAuthor>> {
-  const session = await requireSession();
-  const currentUserId = session.user.id;
+  const session = await getSession();
+  const currentUserId = session?.user?.id ?? null;
 
   const conditions = [eq(posts.parentId, postId)];
   if (cursor) {
@@ -257,9 +269,15 @@ export async function getPostReplies({
       likesCount: sql<number>`(SELECT COUNT(*) FROM likes WHERE likes.post_id = ${posts.id})`,
       repostsCount: sql<number>`(SELECT COUNT(*) FROM reposts WHERE reposts.post_id = ${posts.id})`,
       repliesCount: sql<number>`(SELECT COUNT(*) FROM posts AS r WHERE r.parent_id = ${posts.id})`,
-      isLiked: sql<boolean>`EXISTS(SELECT 1 FROM likes WHERE likes.post_id = ${posts.id} AND likes.user_id = ${currentUserId})`,
-      isReposted: sql<boolean>`EXISTS(SELECT 1 FROM reposts WHERE reposts.post_id = ${posts.id} AND reposts.user_id = ${currentUserId})`,
-      isBookmarked: sql<boolean>`EXISTS(SELECT 1 FROM bookmarks WHERE bookmarks.post_id = ${posts.id} AND bookmarks.user_id = ${currentUserId})`,
+      isLiked: currentUserId
+        ? sql<boolean>`EXISTS(SELECT 1 FROM likes WHERE likes.post_id = ${posts.id} AND likes.user_id = ${currentUserId})`
+        : sql<boolean>`false`,
+      isReposted: currentUserId
+        ? sql<boolean>`EXISTS(SELECT 1 FROM reposts WHERE reposts.post_id = ${posts.id} AND reposts.user_id = ${currentUserId})`
+        : sql<boolean>`false`,
+      isBookmarked: currentUserId
+        ? sql<boolean>`EXISTS(SELECT 1 FROM bookmarks WHERE bookmarks.post_id = ${posts.id} AND bookmarks.user_id = ${currentUserId})`
+        : sql<boolean>`false`,
     })
     .from(posts)
     .innerJoin(user, eq(posts.authorId, user.id))
@@ -300,13 +318,13 @@ export async function getPostReplies({
 }
 
 export async function getPostWithThread(postId: string) {
-  const session = await requireSession();
-  const currentUserId = session.user.id;
+  const session = await getSession();
+  const currentUserId = session?.user?.id ?? null;
 
   const post = await getPostByIdInternal(postId, currentUserId);
   if (!post) return null;
 
-  // Build parent chain (reuses session, no repeated auth checks)
+  // Build parent chain
   const parents: PostWithAuthor[] = [];
   let currentParentId = post.parentId;
   while (currentParentId) {

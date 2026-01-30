@@ -2,15 +2,15 @@
 
 import { db } from "@/lib/db";
 import { posts, user, follows, likes, reposts, bookmarks } from "@/lib/db/schema";
-import { requireSession } from "@/lib/auth-session";
+import { getSession } from "@/lib/auth-session";
 import { eq, desc, sql, ilike, and, ne } from "drizzle-orm";
 import type { PostWithAuthor } from "@/types";
 
 export async function searchPosts(query: string): Promise<PostWithAuthor[]> {
   if (!query.trim()) return [];
 
-  const session = await requireSession();
-  const currentUserId = session.user.id;
+  const session = await getSession();
+  const currentUserId = session?.user?.id ?? null;
 
   const results = await db
     .select({
@@ -26,9 +26,15 @@ export async function searchPosts(query: string): Promise<PostWithAuthor[]> {
       likesCount: sql<number>`(SELECT COUNT(*) FROM likes WHERE likes.post_id = ${posts.id})`,
       repostsCount: sql<number>`(SELECT COUNT(*) FROM reposts WHERE reposts.post_id = ${posts.id})`,
       repliesCount: sql<number>`(SELECT COUNT(*) FROM posts AS r WHERE r.parent_id = ${posts.id})`,
-      isLiked: sql<boolean>`EXISTS(SELECT 1 FROM likes WHERE likes.post_id = ${posts.id} AND likes.user_id = ${currentUserId})`,
-      isReposted: sql<boolean>`EXISTS(SELECT 1 FROM reposts WHERE reposts.post_id = ${posts.id} AND reposts.user_id = ${currentUserId})`,
-      isBookmarked: sql<boolean>`EXISTS(SELECT 1 FROM bookmarks WHERE bookmarks.post_id = ${posts.id} AND bookmarks.user_id = ${currentUserId})`,
+      isLiked: currentUserId
+        ? sql<boolean>`EXISTS(SELECT 1 FROM likes WHERE likes.post_id = ${posts.id} AND likes.user_id = ${currentUserId})`
+        : sql<boolean>`false`,
+      isReposted: currentUserId
+        ? sql<boolean>`EXISTS(SELECT 1 FROM reposts WHERE reposts.post_id = ${posts.id} AND reposts.user_id = ${currentUserId})`
+        : sql<boolean>`false`,
+      isBookmarked: currentUserId
+        ? sql<boolean>`EXISTS(SELECT 1 FROM bookmarks WHERE bookmarks.post_id = ${posts.id} AND bookmarks.user_id = ${currentUserId})`
+        : sql<boolean>`false`,
     })
     .from(posts)
     .innerJoin(user, eq(posts.authorId, user.id))
@@ -63,8 +69,8 @@ export async function searchPosts(query: string): Promise<PostWithAuthor[]> {
 export async function searchUsers(query: string) {
   if (!query.trim()) return [];
 
-  const session = await requireSession();
-  const currentUserId = session.user.id;
+  const session = await getSession();
+  const currentUserId = session?.user?.id ?? null;
 
   const results = await db
     .select({
@@ -73,11 +79,13 @@ export async function searchUsers(query: string) {
       username: user.username,
       image: user.image,
       bio: user.bio,
-      isFollowing: sql<boolean>`EXISTS(
-        SELECT 1 FROM follows
-        WHERE follows.follower_id = ${currentUserId}
-        AND follows.following_id = ${user.id}
-      )`,
+      isFollowing: currentUserId
+        ? sql<boolean>`EXISTS(
+            SELECT 1 FROM follows
+            WHERE follows.follower_id = ${currentUserId}
+            AND follows.following_id = ${user.id}
+          )`
+        : sql<boolean>`false`,
     })
     .from(user)
     .where(
@@ -121,9 +129,36 @@ export async function getTrending() {
 }
 
 export async function getWhoToFollow() {
-  const session = await requireSession();
-  const currentUserId = session.user.id;
+  const session = await getSession();
+  const currentUserId = session?.user?.id ?? null;
 
+  if (currentUserId) {
+    const results = await db
+      .select({
+        id: user.id,
+        name: user.name,
+        username: user.username,
+        image: user.image,
+        bio: user.bio,
+      })
+      .from(user)
+      .where(
+        and(
+          ne(user.id, currentUserId),
+          sql`NOT EXISTS(
+            SELECT 1 FROM follows
+            WHERE follows.follower_id = ${currentUserId}
+            AND follows.following_id = ${user.id}
+          )`,
+        ),
+      )
+      .orderBy(sql`RANDOM()`)
+      .limit(3);
+
+    return results;
+  }
+
+  // Not authenticated: show random users
   const results = await db
     .select({
       id: user.id,
@@ -133,16 +168,6 @@ export async function getWhoToFollow() {
       bio: user.bio,
     })
     .from(user)
-    .where(
-      and(
-        ne(user.id, currentUserId),
-        sql`NOT EXISTS(
-          SELECT 1 FROM follows
-          WHERE follows.follower_id = ${currentUserId}
-          AND follows.following_id = ${user.id}
-        )`,
-      ),
-    )
     .orderBy(sql`RANDOM()`)
     .limit(3);
 

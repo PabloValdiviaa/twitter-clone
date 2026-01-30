@@ -34,22 +34,28 @@ type SidebarUser = {
   image?: string | null;
 };
 
-export function Sidebar({ user }: { user: SidebarUser }) {
+export function Sidebar({ user }: { user: SidebarUser | null }) {
   const router = useRouter();
 
   const { data: unreadCount } = useQuery({
     queryKey: ["notifications", "unread-count"],
     queryFn: () => getUnreadCount(),
     refetchInterval: 30000,
+    enabled: !!user,
   });
 
-  const navLinks = [
-    { href: "/home", icon: Home, label: "Inicio" },
-    { href: "/explore", icon: Search, label: "Explorar" },
-    { href: "/notifications", icon: Bell, label: "Notificaciones", badge: unreadCount },
-    { href: "/bookmarks", icon: Bookmark, label: "Guardados" },
-    { href: "/settings", icon: Settings, label: "Configuración" },
-  ];
+  const navLinks = user
+    ? [
+        { href: "/home", icon: Home, label: "Inicio" },
+        { href: "/explore", icon: Search, label: "Explorar" },
+        { href: "/notifications", icon: Bell, label: "Notificaciones", badge: unreadCount },
+        { href: "/bookmarks", icon: Bookmark, label: "Guardados" },
+        { href: "/settings", icon: Settings, label: "Configuración" },
+      ]
+    : [
+        { href: "/home", icon: Home, label: "Inicio" },
+        { href: "/explore", icon: Search, label: "Explorar" },
+      ];
 
   async function handleLogout() {
     await authClient.signOut();
@@ -75,65 +81,97 @@ export function Sidebar({ user }: { user: SidebarUser }) {
           <SidebarLink key={link.href} {...link} />
         ))}
 
-        {/* Profile Link */}
-        <SidebarLink
-          href={`/${user.username || user.id}`}
-          icon={UserIcon}
-          label="Perfil"
-        />
+        {/* Profile Link - only when authenticated */}
+        {user && (
+          <SidebarLink
+            href={`/${user.username || user.id}`}
+            icon={UserIcon}
+            label="Perfil"
+          />
+        )}
 
-        {/* Post Button */}
-        <Button
-          className="mt-4 w-12 rounded-full xl:w-full"
-          size="lg"
-          asChild
-        >
-          <Link href="/home">
-            <Feather className="h-5 w-5 xl:hidden" />
-            <span className="hidden xl:inline">Postear</span>
-          </Link>
-        </Button>
+        {/* Post Button - only when authenticated */}
+        {user && (
+          <Button
+            className="mt-4 w-12 rounded-full xl:w-full"
+            size="lg"
+            asChild
+          >
+            <Link href="/home">
+              <Feather className="h-5 w-5 xl:hidden" />
+              <span className="hidden xl:inline">Postear</span>
+            </Link>
+          </Button>
+        )}
+
+        {/* Auth buttons - only when NOT authenticated */}
+        {!user && (
+          <div className="mt-4 space-y-2">
+            <Button
+              className="w-12 rounded-full xl:w-full"
+              size="lg"
+              asChild
+            >
+              <Link href="/login">
+                <span className="hidden xl:inline">Iniciar sesión</span>
+                <LogOut className="h-5 w-5 xl:hidden" />
+              </Link>
+            </Button>
+            <Button
+              variant="outline"
+              className="hidden w-full rounded-full xl:flex"
+              size="lg"
+              asChild
+            >
+              <Link href="/register">
+                Registrarse
+              </Link>
+            </Button>
+          </div>
+        )}
       </div>
 
-      {/* User Menu */}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button className="flex w-full items-center gap-3 rounded-full p-3 transition-colors hover:bg-accent">
-            <UserAvatar
-              name={user.name}
-              image={user.image}
-              className="h-10 w-10"
-            />
-            <div className="hidden flex-1 text-left xl:block">
-              <p className="text-sm font-semibold leading-tight truncate">
-                {user.name}
-              </p>
-              <p className="text-sm text-muted-foreground truncate">
-                @{user.username || "user"}
-              </p>
-            </div>
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-[200px]">
-          <DropdownMenuItem asChild>
-            <Link href={`/${user.username || user.id}`}>
-              <UserIcon className="mr-2 h-4 w-4" />
-              Perfil
-            </Link>
-          </DropdownMenuItem>
-          <DropdownMenuItem asChild>
-            <Link href="/settings">
-              <Settings className="mr-2 h-4 w-4" />
-              Configuración
-            </Link>
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={handleLogout}>
-            <LogOut className="mr-2 h-4 w-4" />
-            Cerrar sesión
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {/* User Menu - only when authenticated */}
+      {user && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="flex w-full items-center gap-3 rounded-full p-3 transition-colors hover:bg-accent">
+              <UserAvatar
+                name={user.name}
+                image={user.image}
+                className="h-10 w-10"
+              />
+              <div className="hidden flex-1 text-left xl:block">
+                <p className="text-sm font-semibold leading-tight truncate">
+                  {user.name}
+                </p>
+                <p className="text-sm text-muted-foreground truncate">
+                  @{user.username || "user"}
+                </p>
+              </div>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-[200px]">
+            <DropdownMenuItem asChild>
+              <Link href={`/${user.username || user.id}`}>
+                <UserIcon className="mr-2 h-4 w-4" />
+                Perfil
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href="/settings">
+                <Settings className="mr-2 h-4 w-4" />
+                Configuración
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={handleLogout}>
+              <LogOut className="mr-2 h-4 w-4" />
+              Cerrar sesión
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </div>
   );
 }

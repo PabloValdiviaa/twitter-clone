@@ -2,7 +2,7 @@
 
 import { db } from "@/lib/db";
 import { user, posts, follows, likes, reposts, bookmarks } from "@/lib/db/schema";
-import { requireSession } from "@/lib/auth-session";
+import { getSession, requireSession } from "@/lib/auth-session";
 import { updateProfileSchema } from "@/lib/validators";
 import { eq, and, desc, lt, sql, or } from "drizzle-orm";
 import type { ProfileWithStats, PostWithAuthor, CursorPaginationResult, ActionResult } from "@/types";
@@ -10,8 +10,8 @@ import type { ProfileWithStats, PostWithAuthor, CursorPaginationResult, ActionRe
 const POSTS_PER_PAGE = 20;
 
 export async function getProfile(username: string): Promise<ProfileWithStats | null> {
-  const session = await requireSession();
-  const currentUserId = session.user.id;
+  const session = await getSession();
+  const currentUserId = session?.user?.id ?? null;
 
   const userRecord = await db.query.user.findFirst({
     where: or(eq(user.username, username), eq(user.id, username)),
@@ -24,7 +24,9 @@ export async function getProfile(username: string): Promise<ProfileWithStats | n
       followersCount: sql<number>`(SELECT COUNT(*) FROM follows WHERE follows.following_id = ${userRecord.id})`,
       followingCount: sql<number>`(SELECT COUNT(*) FROM follows WHERE follows.follower_id = ${userRecord.id})`,
       postsCount: sql<number>`(SELECT COUNT(*) FROM posts WHERE posts.author_id = ${userRecord.id} AND posts.parent_id IS NULL)`,
-      isFollowing: sql<boolean>`EXISTS(SELECT 1 FROM follows WHERE follows.follower_id = ${currentUserId} AND follows.following_id = ${userRecord.id})`,
+      isFollowing: currentUserId
+        ? sql<boolean>`EXISTS(SELECT 1 FROM follows WHERE follows.follower_id = ${currentUserId} AND follows.following_id = ${userRecord.id})`
+        : sql<boolean>`false`,
     })
     .from(user)
     .where(eq(user.id, userRecord.id));
@@ -37,7 +39,7 @@ export async function getProfile(username: string): Promise<ProfileWithStats | n
       posts: Number(stats.postsCount),
     },
     isFollowing: Boolean(stats.isFollowing),
-    isOwnProfile: userRecord.id === currentUserId,
+    isOwnProfile: currentUserId ? userRecord.id === currentUserId : false,
   };
 }
 
@@ -95,8 +97,8 @@ export async function getUserPosts({
   cursor?: string;
   tab?: "posts" | "replies" | "likes";
 }): Promise<CursorPaginationResult<PostWithAuthor>> {
-  const session = await requireSession();
-  const currentUserId = session.user.id;
+  const session = await getSession();
+  const currentUserId = session?.user?.id ?? null;
 
   if (tab === "likes") {
     return getUserLikedPosts({ userId, cursor, currentUserId });
@@ -124,9 +126,15 @@ export async function getUserPosts({
       likesCount: sql<number>`(SELECT COUNT(*) FROM likes WHERE likes.post_id = ${posts.id})`,
       repostsCount: sql<number>`(SELECT COUNT(*) FROM reposts WHERE reposts.post_id = ${posts.id})`,
       repliesCount: sql<number>`(SELECT COUNT(*) FROM posts AS r WHERE r.parent_id = ${posts.id})`,
-      isLiked: sql<boolean>`EXISTS(SELECT 1 FROM likes WHERE likes.post_id = ${posts.id} AND likes.user_id = ${currentUserId})`,
-      isReposted: sql<boolean>`EXISTS(SELECT 1 FROM reposts WHERE reposts.post_id = ${posts.id} AND reposts.user_id = ${currentUserId})`,
-      isBookmarked: sql<boolean>`EXISTS(SELECT 1 FROM bookmarks WHERE bookmarks.post_id = ${posts.id} AND bookmarks.user_id = ${currentUserId})`,
+      isLiked: currentUserId
+        ? sql<boolean>`EXISTS(SELECT 1 FROM likes WHERE likes.post_id = ${posts.id} AND likes.user_id = ${currentUserId})`
+        : sql<boolean>`false`,
+      isReposted: currentUserId
+        ? sql<boolean>`EXISTS(SELECT 1 FROM reposts WHERE reposts.post_id = ${posts.id} AND reposts.user_id = ${currentUserId})`
+        : sql<boolean>`false`,
+      isBookmarked: currentUserId
+        ? sql<boolean>`EXISTS(SELECT 1 FROM bookmarks WHERE bookmarks.post_id = ${posts.id} AND bookmarks.user_id = ${currentUserId})`
+        : sql<boolean>`false`,
     })
     .from(posts)
     .innerJoin(user, eq(posts.authorId, user.id))
@@ -171,7 +179,7 @@ async function getUserLikedPosts({
 }: {
   userId: string;
   cursor?: string;
-  currentUserId: string;
+  currentUserId: string | null;
 }): Promise<CursorPaginationResult<PostWithAuthor>> {
   const conditions = [eq(likes.userId, userId)];
   if (cursor) {
@@ -193,9 +201,15 @@ async function getUserLikedPosts({
       likesCount: sql<number>`(SELECT COUNT(*) FROM likes WHERE likes.post_id = ${posts.id})`,
       repostsCount: sql<number>`(SELECT COUNT(*) FROM reposts WHERE reposts.post_id = ${posts.id})`,
       repliesCount: sql<number>`(SELECT COUNT(*) FROM posts AS r WHERE r.parent_id = ${posts.id})`,
-      isLiked: sql<boolean>`EXISTS(SELECT 1 FROM likes WHERE likes.post_id = ${posts.id} AND likes.user_id = ${currentUserId})`,
-      isReposted: sql<boolean>`EXISTS(SELECT 1 FROM reposts WHERE reposts.post_id = ${posts.id} AND reposts.user_id = ${currentUserId})`,
-      isBookmarked: sql<boolean>`EXISTS(SELECT 1 FROM bookmarks WHERE bookmarks.post_id = ${posts.id} AND bookmarks.user_id = ${currentUserId})`,
+      isLiked: currentUserId
+        ? sql<boolean>`EXISTS(SELECT 1 FROM likes WHERE likes.post_id = ${posts.id} AND likes.user_id = ${currentUserId})`
+        : sql<boolean>`false`,
+      isReposted: currentUserId
+        ? sql<boolean>`EXISTS(SELECT 1 FROM reposts WHERE reposts.post_id = ${posts.id} AND reposts.user_id = ${currentUserId})`
+        : sql<boolean>`false`,
+      isBookmarked: currentUserId
+        ? sql<boolean>`EXISTS(SELECT 1 FROM bookmarks WHERE bookmarks.post_id = ${posts.id} AND bookmarks.user_id = ${currentUserId})`
+        : sql<boolean>`false`,
     })
     .from(likes)
     .innerJoin(posts, eq(likes.postId, posts.id))
