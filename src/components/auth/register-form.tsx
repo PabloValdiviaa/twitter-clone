@@ -2,7 +2,6 @@
 
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
@@ -21,7 +20,6 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 
 export function RegisterForm() {
-  const router = useRouter();
   const [isPending, setIsPending] = useState(false);
 
   const form = useForm<RegisterInput>({
@@ -36,29 +34,33 @@ export function RegisterForm() {
 
   async function onSubmit(values: RegisterInput) {
     setIsPending(true);
-    const { error } = await authClient.signUp.email({
-      name: values.name,
-      email: values.email,
-      password: values.password,
-    });
+    try {
+      const { error } = await authClient.signUp.email({
+        name: values.name,
+        email: values.email,
+        password: values.password,
+      });
 
-    if (error) {
-      toast.error(error.message || "Error al registrarse");
+      if (error) {
+        toast.error(error.message || "Error al registrarse");
+        setIsPending(false);
+        return;
+      }
+
+      // Set username after signup
+      const result = await setUsername(values.username);
+      if (!result.success) {
+        toast.error(result.error);
+        setIsPending(false);
+        return;
+      }
+
+      toast.success("¡Cuenta creada exitosamente!");
+      window.location.href = "/home";
+    } catch {
+      toast.error("Error al registrarse");
       setIsPending(false);
-      return;
     }
-
-    // Set username after signup
-    const result = await setUsername(values.username);
-    if (!result.success) {
-      toast.error(result.error);
-      setIsPending(false);
-      return;
-    }
-
-    toast.success("¡Cuenta creada exitosamente!");
-    router.push("/home");
-    router.refresh();
   }
 
   return (
